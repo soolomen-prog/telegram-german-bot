@@ -4,11 +4,11 @@ import openai
 from gtts import gTTS
 
 # Токены
-BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
-OPENAI_KEY = os.getenv("OPENAI_API_KEY")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 bot = telebot.TeleBot(BOT_TOKEN)
-openai.api_key = OPENAI_KEY
+openai.api_key = OPENAI_API_KEY
 
 # Режимы работы
 mode = "auto"  # по умолчанию auto
