@@ -20,25 +20,29 @@ def tts_to_ogg(answer_text: str, base_filename: str = "reply") -> str:
     """
     Генерирует голос (OGG/Opus) через OpenAI TTS и возвращает путь к файлу.
     """
-    # имя с таймстемпом, чтобы не затирать
     fname = f"{base_filename}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.ogg"
 
-    # ⚠️ Новое API OpenAI: "audio.speech.create"
-    audio = openai.audio.speech.create(
-        model="gpt-4o-mini-tts",   # дешёвая и быстрая TTS-модель
-        voice="alloy",             # голос (можно: alloy, verse, coral, etc.)
+    response = openai.audio.speech.create(
+        model="gpt-4o-mini-tts",
+        voice="alloy",
         input=answer_text,
-        format="opus"              # просим Opus (Telegram voice понимает)
+        format="opus"
     )
-    # audio содержимое — байты ogg/opus
+
+    # Проверяем тип ответа
+    audio_bytes = response if isinstance(response, (bytes, bytearray)) else response.content
+
     with open(fname, "wb") as f:
-        f.write(audio)            # SDK отдаёт bytes-like
+        f.write(audio_bytes)
 
     return fname
 
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.send_message(message.chat.id, "👋 Hallo! Sprich mit mir auf Deutsch. Schick mir eine Sprachnachricht oder schreibe mir.")
+    bot.send_message(
+        message.chat.id,
+        "👋 Hallo! Sprich mit mir auf Deutsch. Schick mir eine Sprachnachricht oder schreibe mir."
+    )
 
 # 🎤 обработка голосовых сообщений
 @bot.message_handler(content_types=['voice'])
@@ -72,13 +76,12 @@ def handle_voice(message):
         # 1) Текстом
         bot.send_message(message.chat.id, answer)
 
-        # 2) Голосом (OGG/Opus)
+        # 2) Голосом
         try:
             ogg_path = tts_to_ogg(answer, base_filename="voice_reply")
             with open(ogg_path, "rb") as vf:
                 bot.send_voice(message.chat.id, vf)
         except Exception as tts_err:
-            # если TTS вдруг не сработал — просто молча пропускаем voice, в лог пишем
             print("TTS error:", tts_err)
             traceback.print_exc()
 
