@@ -16,33 +16,48 @@ if not OPENAI_API_KEY:
 bot = telebot.TeleBot(BOT_TOKEN)
 openai.api_key = OPENAI_API_KEY
 
-def tts_to_ogg(answer_text: str, base_filename: str = "reply") -> str:
+def send_tts(chat_id: int, text: str, base: str = "reply"):
     """
-    Генерирует голос (OGG/Opus) через OpenAI TTS и возвращает путь к файлу.
+    Пытаемся отправить голос:
+    1) OGG/Opus -> send_voice (кружок)
+    2) Если не получилось -> MP3 -> send_audio (карточка)
     """
-    fname = f"{base_filename}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.ogg"
+    # 1) OGG/Opus (Telegram voice)
+    try:
+        ogg_path = f"{base}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.ogg"
+        with openai.audio.speech.with_streaming_response.create(
+            model="gpt-4o-mini-tts",
+            voice="alloy",
+            input=text,
+            format="opus"
+        ) as resp:
+            resp.stream_to_file(ogg_path)
+        with open(ogg_path, "rb") as f:
+            bot.send_voice(chat_id, f)
+        return
+    except Exception as e:
+        print("OGG/Opus TTS failed, fallback to MP3:", e)
+        traceback.print_exc()
 
-    response = openai.audio.speech.create(
-        model="gpt-4o-mini-tts",
-        voice="alloy",
-        input=answer_text,
-        format="opus"
-    )
-
-    # Проверяем тип ответа
-    audio_bytes = response if isinstance(response, (bytes, bytearray)) else response.content
-
-    with open(fname, "wb") as f:
-        f.write(audio_bytes)
-
-    return fname
+    # 2) Fallback MP3 (обычное аудио)
+    try:
+        mp3_path = f"{base}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.mp3"
+        with openai.audio.speech.with_streaming_response.create(
+            model="gpt-4o-mini-tts",
+            voice="alloy",
+            input=text,
+            format="mp3"
+        ) as resp:
+            resp.stream_to_file(mp3_path)
+        with open(mp3_path, "rb") as f:
+            bot.send_audio(chat_id, f, title="Antwort (TTS)")
+    except Exception as e2:
+        print("MP3 TTS also failed:", e2)
+        traceback.print_exc()
 
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.send_message(
-        message.chat.id,
-        "👋 Hallo! Sprich mit mir auf Deutsch. Schick mir eine Sprachnachricht oder schreibe mir."
-    )
+    bot.send_message(message.chat.id, "👋 Hallo! Sprich mit mir auf Deutsch. Schick mir eine Sprachnachricht oder schreibe mir.")
 
 # 🎤 обработка голосовых сообщений
 @bot.message_handler(content_types=['voice'])
@@ -77,13 +92,7 @@ def handle_voice(message):
         bot.send_message(message.chat.id, answer)
 
         # 2) Голосом
-        try:
-            ogg_path = tts_to_ogg(answer, base_filename="voice_reply")
-            with open(ogg_path, "rb") as vf:
-                bot.send_voice(message.chat.id, vf)
-        except Exception as tts_err:
-            print("TTS error:", tts_err)
-            traceback.print_exc()
+        send_tts(message.chat.id, answer, base="voice_reply")
 
     except Exception as e:
         bot.send_message(message.chat.id, "Es gab einen Fehler bei der Verarbeitung der Sprachnachricht. Versuche es bitte noch einmal.")
@@ -107,13 +116,7 @@ def handle_text(message):
         bot.send_message(message.chat.id, answer)
 
         # 2) Голосом
-        try:
-            ogg_path = tts_to_ogg(answer, base_filename="text_reply")
-            with open(ogg_path, "rb") as vf:
-                bot.send_voice(message.chat.id, vf)
-        except Exception as tts_err:
-            print("TTS error:", tts_err)
-            traceback.print_exc()
+        send_tts(message.chat.id, answer, base="text_reply")
 
     except Exception as e:
         bot.send_message(message.chat.id, "Entschuldige, da ist etwas schiefgelaufen. Bitte versuche es später erneut.")
