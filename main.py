@@ -17,9 +17,9 @@ if not OPENAI_API_KEY:
 bot = telebot.TeleBot(BOT_TOKEN)
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# === Per-user режимы ===
-# "teacher" | "chat" | "mix"
-user_modes = {}  # user_id -> mode
+# === Режимы ===
+# "teacher" | "chat" | "mix" | "auto"
+user_modes = {}
 DEFAULT_MODE = "chat"
 
 def get_mode(user_id: int) -> str:
@@ -28,13 +28,8 @@ def get_mode(user_id: int) -> str:
 def set_mode(user_id: int, mode: str):
     user_modes[user_id] = mode
 
-# === TTS (voice & fallback mp3) ===
+# === TTS (OGG + fallback MP3) ===
 def send_tts(chat_id: int, text: str, base: str = "reply"):
-    """
-    1) Пробуем OGG/Opus -> send_voice (кружок)
-    2) Если не вышло — MP3 -> send_audio (карточка)
-    """
-    # --- 1) OGG/Opus ---
     try:
         ogg_path = f"{base}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.ogg"
         with client.audio.speech.with_streaming_response.create(
@@ -48,10 +43,9 @@ def send_tts(chat_id: int, text: str, base: str = "reply"):
             bot.send_voice(chat_id, f)
         return
     except Exception as e:
-        print("OGG/Opus TTS failed, fallback to MP3:", e)
+        print("OGG/Opus TTS failed:", e)
         traceback.print_exc()
 
-    # --- 2) MP3 fallback ---
     try:
         mp3_path = f"{base}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.mp3"
         with client.audio.speech.with_streaming_response.create(
@@ -69,29 +63,27 @@ def send_tts(chat_id: int, text: str, base: str = "reply"):
 
 # === Генерация ответа ===
 def generate_reply(user_text: str, mode: str):
-    """
-    Возвращает (german_reply, ru_explain_or_empty)
-    - german_reply: короткий натуральный ответ на немецком
-    - ru_explain_or_empty: пусто либо исправления+объяснение на русском
-    """
     if mode == "teacher":
         system = (
             "Ты учитель немецкого. Сначала дай короткий естественный ответ на немецком "
-            "(1–2 предложения, без перечислений). Затем оцени реплику ученика и подготовь "
-            "отдельный краткий блок исправлений на русском: что было неправильно и почему, "
-            "с 1–2 примерами. Если ошибок нет — напиши 'Ошибок нет'."
+            "для продолжения разговора. Затем оцени реплику ученика и подготовь "
+            "отдельный краткий блок исправлений на русском. Если ошибок нет — напиши 'Ошибок нет'."
         )
     elif mode == "mix":
         system = (
-            "Ты собеседник на немецком. Отвечай коротко и естественно на немецком. "
-            "Исправляй и объясняй ошибки только если пользователь явно просит "
-            "(по-русски 'исправь', по-немецки 'korrigiere', 'korrigieren', 'Fehler', 'korrektur'). "
-            "Если явной просьбы нет — не давай исправлений."
+            "Ты собеседник на немецком. Отвечай коротко и естественно. "
+            "Исправляй ошибки только если пользователь явно просит ('исправь', 'korrigiere')."
+        )
+    elif mode == "auto":
+        system = (
+            "Ты собеседник на немецком. Отвечай естественно и коротко (1–2 предложения). "
+            "Если в сообщении ученика есть ошибки — укажи их и объясни на русском. "
+            "Если ошибок нет — ничего не пиши дополнительно, только ответь по-немецки."
         )
     else:  # chat
         system = (
-            "Ты собеседник на немецком. Отвечай естественно и коротко (1–2 предложения). "
-            "Не давай исправлений и объяснений."
+            "Ты собеседник на немецком. Отвечай естественно и коротко. "
+            "Не исправляй и не объясняй."
         )
 
     resp = client.chat.completions.create(
@@ -104,21 +96,14 @@ def generate_reply(user_text: str, mode: str):
     )
     full = resp.choices[0].message.content.strip()
 
-    # Простое разделение на немецкий ответ + русское объяснение.
-    # В режиме teacher модель, как правило, выдаст 2 смысловых части.
     german_reply = full
     ru_explain = ""
 
-    # Эвристика: пытаемся отделить русский блок, если он есть.
-    # Ищем маркеры кириллицы в конце или абзац с русским текстом.
-    if mode in ("teacher", "mix"):
-        # если в ответе есть кириллица — отделим последний абзац с кириллицей
+    if mode in ("teacher", "auto"):
         parts = [p.strip() for p in full.split("\n") if p.strip()]
         ru_parts = [p for p in parts if any("а" <= ch <= "я" or "А" <= ch <= "Я" for ch in p)]
         if ru_parts:
-            # русский блок — все строки с кириллицей (соединим)
             ru_explain = "\n".join(ru_parts)
-            # немецкий — остальное (соединим в 1–2 предложения)
             de_parts = [p for p in parts if p not in ru_parts]
             german_reply = " ".join(de_parts).strip() or german_reply
 
@@ -132,9 +117,10 @@ def start(message):
         message.chat.id,
         "👋 Hallo! Ich bin dein Deutsch-Bot.\n"
         "Команды:\n"
-        "• /teacher_on – режим Учителя (исправляю и объясняю по-русски)\n"
-        "• /teacher_off – режим Собеседника (только по-немецки)\n"
+        "• /teacher_on – всегда исправляю и объясняю\n"
+        "• /teacher_off – только немецкий, без исправлений\n"
         "• /mix – исправляю только по просьбе\n"
+        "• /auto – исправляю автоматически, но только если ошибки есть\n"
         "• /status – показать текущий режим\n\n"
         "Schick mir Text oder eine Sprachnachricht!"
     )
@@ -142,22 +128,27 @@ def start(message):
 @bot.message_handler(commands=['teacher_on'])
 def teacher_on(message):
     set_mode(message.from_user.id, "teacher")
-    bot.send_message(message.chat.id, "🧑‍🏫 Режим Учителя включён: отвечаю по-немецки, ошибки объясняю по-русски.")
+    bot.send_message(message.chat.id, "🧑‍🏫 Режим Учителя включён.")
 
 @bot.message_handler(commands=['teacher_off'])
 def teacher_off(message):
     set_mode(message.from_user.id, "chat")
-    bot.send_message(message.chat.id, "💬 Режим Собеседника: только по-немецки, без исправлений.")
+    bot.send_message(message.chat.id, "💬 Режим Собеседника включён.")
 
 @bot.message_handler(commands=['mix'])
 def mix_mode(message):
     set_mode(message.from_user.id, "mix")
-    bot.send_message(message.chat.id, "🔀 Микс: по-немецки, ошибки исправляю только по просьбе.")
+    bot.send_message(message.chat.id, "🔀 Микс включён.")
+
+@bot.message_handler(commands=['auto'])
+def auto_mode(message):
+    set_mode(message.from_user.id, "auto")
+    bot.send_message(message.chat.id, "🤖 Авто-режим: исправляю только если ошибки есть.")
 
 @bot.message_handler(commands=['status'])
 def status(message):
     mode = get_mode(message.from_user.id)
-    labels = {"teacher": "Учитель", "chat": "Собеседник", "mix": "Микс"}
+    labels = {"teacher": "Учитель", "chat": "Собеседник", "mix": "Микс", "auto": "Авто"}
     bot.send_message(message.chat.id, f"⚙️ Текущий режим: {labels.get(mode, mode)}")
 
 # === Voice ===
@@ -166,14 +157,12 @@ def handle_voice(message):
     try:
         mode = get_mode(message.from_user.id)
 
-        # скачать OGG от Telegram
         file_info = bot.get_file(message.voice.file_id)
         file = requests.get(f'https://api.telegram.org/file/bot{BOT_TOKEN}/{file_info.file_path}', timeout=30)
         local_path = "voice.ogg"
         with open(local_path, "wb") as f:
             f.write(file.content)
 
-        # Распознавание
         with open(local_path, "rb") as audio_file:
             transcript = client.audio.transcriptions.create(
                 model="gpt-4o-mini-transcribe",
@@ -181,14 +170,11 @@ def handle_voice(message):
             )
         user_text = getattr(transcript, "text", str(transcript)).strip()
 
-        # Генерация ответа
         de_answer, ru_explain = generate_reply(user_text, mode)
 
-        # Текстом + голосом
         bot.send_message(message.chat.id, de_answer)
         send_tts(message.chat.id, de_answer, base="voice_reply")
 
-        # Объяснение по-русски (если есть)
         if ru_explain:
             bot.send_message(message.chat.id, f"✍️ {ru_explain}")
 
@@ -211,7 +197,7 @@ def handle_text(message):
             bot.send_message(message.chat.id, f"✍️ {ru_explain}")
 
     except Exception as e:
-        bot.send_message(message.chat.id, "Entschuldige, da ist etwas schiefgelaufen. Bitte versuche es später erneut.")
+        bot.send_message(message.chat.id, "Entschuldige, da ist etwas schiefgelaufen.")
         print("Text handler error:", e)
         traceback.print_exc()
 
