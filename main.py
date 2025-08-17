@@ -37,7 +37,7 @@ def handle_voice(message):
         ]
     )
 
-    answer = response.choices[0].message["content"]
+    answer = response.choices[0].message.content
     bot.send_message(message.chat.id, answer)
 
 print("🤖 Bot läuft...")
