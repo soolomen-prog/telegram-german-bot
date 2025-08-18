@@ -2,6 +2,7 @@ import os
 import traceback
 import requests
 import telebot
+from telebot import types
 from datetime import datetime
 from openai import OpenAI
 
@@ -61,9 +62,38 @@ def send_tts(chat_id: int, text: str, base: str = "reply"):
         print("MP3 TTS also failed:", e2)
         traceback.print_exc()
 
+# === Детектор "как сказать" ===
+def detect_translation_request(user_text: str) -> bool:
+    triggers = [
+        "как сказать", "как будет по-немецки", "не знаю как сказать", "переведи",
+        "wie sagt man", "how to say", "translate"
+    ]
+    if any(t in user_text.lower() for t in triggers):
+        return True
+
+    try:
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "Определи: похоже ли сообщение на запрос перевода или поиск слова? Ответь только 'Да' или 'Нет'."},
+                {"role": "user", "content": user_text}
+            ],
+            temperature=0
+        )
+        answer = resp.choices[0].message.content.strip().lower()
+        return "да" in answer
+    except:
+        return False
+
 # === Генерация ответа ===
 def generate_reply(user_text: str, mode: str):
-    if mode == "teacher":
+    if detect_translation_request(user_text):
+        system = (
+            "Пользователь ищет перевод или не знает, как сказать что-то по-немецки. "
+            "Дай перевод, объясни грамматику и построй 2–3 примера. "
+            "Пиши на русском объяснение, примеры на немецком."
+        )
+    elif mode == "teacher":
         system = (
             "Ты учитель немецкого языка. Отвечай на немецком (1–2 предложения), "
             "чтобы продолжить диалог. Затем, отдельно, сделай блок: "
@@ -101,13 +131,10 @@ def generate_reply(user_text: str, mode: str):
     german_reply = full
     ru_explain = ""
 
-    if mode in ("teacher", "auto"):
-        parts = [p.strip() for p in full.split("\n") if p.strip()]
-        ru_parts = [p for p in parts if any("а" <= ch <= "я" or "А" <= ch <= "Я" for ch in p)]
-        if ru_parts:
-            ru_explain = "\n".join(ru_parts)
-            de_parts = [p for p in parts if p not in ru_parts]
-            german_reply = " ".join(de_parts).strip() or german_reply
+    if "Исправления:" in full:
+        parts = full.split("Исправления:")
+        german_reply = parts[0].strip()
+        ru_explain = "Исправления:" + parts[1].strip()
 
     return german_reply, ru_explain
 
@@ -123,7 +150,8 @@ def start(message):
         "• /teacher_off – только немецкий, без исправлений\n"
         "• /mix – исправляю только по просьбе\n"
         "• /auto – исправляю автоматически, но только если ошибки есть\n"
-        "• /status – показать текущий режим\n\n"
+        "• /status – показать текущий режим\n"
+        "• /lesson – начать урок\n\n"
         "Schick mir Text oder eine Sprachnachricht!"
     )
 
@@ -152,6 +180,33 @@ def status(message):
     mode = get_mode(message.from_user.id)
     labels = {"teacher": "Учитель", "chat": "Собеседник", "mix": "Микс", "auto": "Авто"}
     bot.send_message(message.chat.id, f"⚙️ Текущий режим: {labels.get(mode, mode)}")
+
+# === Уроки ===
+@bot.message_handler(commands=['lesson'])
+def lesson(message):
+    keyboard = types.InlineKeyboardMarkup()
+    keyboard.add(types.InlineKeyboardButton("Приветствие", callback_data="lesson_greeting"))
+    keyboard.add(types.InlineKeyboardButton("Покупки", callback_data="lesson_shopping"))
+    keyboard.add(types.InlineKeyboardButton("Путешествия", callback_data="lesson_travel"))
+    keyboard.add(types.InlineKeyboardButton("Работа", callback_data="lesson_work"))
+    bot.send_message(message.chat.id, "📚 Выбери тему урока:", reply_markup=keyboard)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("lesson_"))
+def lesson_callback(call):
+    topic = call.data.split("_", 1)[1]
+    system = (
+        f"Сделай мини-урок по теме '{topic}'. "
+        "1) Объясни правило/фразы (на русском), "
+        "2) дай 2–3 примера на немецком, "
+        "3) задай вопрос пользователю для практики."
+    )
+    resp = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "system", "content": system}],
+        temperature=0.7,
+    )
+    lesson_text = resp.choices[0].message.content.strip()
+    bot.send_message(call.message.chat.id, lesson_text)
 
 # === Voice ===
 @bot.message_handler(content_types=['voice'])
