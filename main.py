@@ -14,6 +14,11 @@ if not BOT_TOKEN:
 if not OPENAI_API_KEY:
     raise RuntimeError("OPENAI_API_KEY is not set in environment variables")
 
+# === Donate ===
+DONATE_URL = "https://buymeacoffee.com/debot"  # твоя ссылка на поддержку
+DONATE_REMINDER_EVERY = 15                      # напоминать каждые N сообщений (можно изменить)
+user_msg_count = {}                              # user_id -> int
+
 # === Clients ===
 bot = telebot.TeleBot(BOT_TOKEN)
 client = OpenAI(api_key=OPENAI_API_KEY)
@@ -21,13 +26,33 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 # === Режимы ===
 # "teacher" | "chat" | "mix" | "auto"
 user_modes = {}
-DEFAULT_MODE = "chat"
+DEFAULT_MODE = "teacher"   # <-- по умолчанию теперь Учитель
 
 def get_mode(user_id: int) -> str:
     return user_modes.get(user_id, DEFAULT_MODE)
 
 def set_mode(user_id: int, mode: str):
     user_modes[user_id] = mode
+
+# === Напоминание о донате ===
+def send_donate_message(chat_id: int, short: bool = False):
+    text_long = (
+        "💬 Этот бот помогает практиковать немецкий. "
+        "Если он тебе полезен — можно поддержать проект ☕\n"
+        "Любая поддержка помогает развивать новые функции и держать бота живым ❤️"
+    )
+    text_short = "☕ Нравится бот? Можно поддержать проект — это очень помогает 💛"
+    text = text_short if short else text_long
+
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("☕ Поддержать проект", url=DONATE_URL))
+    bot.send_message(chat_id, text, reply_markup=markup, disable_web_page_preview=True)
+
+def inc_and_maybe_remind(chat_id: int, user_id: int):
+    cnt = user_msg_count.get(user_id, 0) + 1
+    user_msg_count[user_id] = cnt
+    if DONATE_REMINDER_EVERY and cnt % DONATE_REMINDER_EVERY == 0:
+        send_donate_message(chat_id, short=True)
 
 # === TTS (OGG + fallback MP3) ===
 def send_tts(chat_id: int, text: str, base: str = "reply"):
@@ -139,6 +164,10 @@ def generate_reply(user_text: str, mode: str):
     return german_reply, ru_explain
 
 # === Команды ===
+@bot.message_handler(commands=['donate'])
+def donate_cmd(message):
+    send_donate_message(message.chat.id, short=False)
+
 @bot.message_handler(commands=['start', 'help'])
 def start(message):
     set_mode(message.from_user.id, DEFAULT_MODE)
@@ -151,7 +180,8 @@ def start(message):
         "• /mix – исправляю только по просьбе\n"
         "• /auto – исправляю автоматически, но только если ошибки есть\n"
         "• /status – показать текущий режим\n"
-        "• /lesson – начать урок\n\n"
+        "• /lesson – начать урок\n"
+        "• /donate – поддержать проект ☕\n\n"
         "Schick mir Text oder eine Sprachnachricht!"
     )
 
@@ -235,6 +265,8 @@ def handle_voice(message):
         if ru_explain:
             bot.send_message(message.chat.id, f"✍️ {ru_explain}")
 
+        inc_and_maybe_remind(message.chat.id, message.from_user.id)
+
     except Exception as e:
         bot.send_message(message.chat.id, "Es gab einen Fehler. Versuche es bitte noch einmal.")
         print("Voice handler error:", e)
@@ -252,6 +284,8 @@ def handle_text(message):
 
         if ru_explain:
             bot.send_message(message.chat.id, f"✍️ {ru_explain}")
+
+        inc_and_maybe_remind(message.chat.id, message.from_user.id)
 
     except Exception as e:
         bot.send_message(message.chat.id, "Entschuldige, da ist etwas schiefgelaufen.")
