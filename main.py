@@ -38,7 +38,6 @@ def set_mode(user_id: int, mode: str):
     user_modes[user_id] = mode
 
 # === Языки UI ===
-# Коды: ru, uk, en, tr, fa, ar
 LANGS = ["ru", "uk", "en", "tr", "fa", "ar"]
 LANG_TITLES = {
     "ru": "Русский",
@@ -48,9 +47,8 @@ LANG_TITLES = {
     "fa": "فارسی",
     "ar": "العربية",
 }
-# язык пользователя
 user_langs = {}
-DEFAULT_LANG = "ru"
+DEFAULT_LANG = "en"  # приветствие и первый экран на английском
 
 def get_lang(user_id: int) -> str:
     return user_langs.get(user_id, DEFAULT_LANG)
@@ -132,7 +130,7 @@ I18N = {
         "no_errors": "Помилок немає",
     },
     "en": {
-        "greet": "👋 Hi! I’m your Deutsch-bot.\nChoose your interface language:",
+        "greet": "👋 Hi! I’m your Deutsch-bot.\nPlease choose your interface language:",
         "help": (
             "Commands:\n"
             "• /teacher_on — always correct and explain\n"
@@ -167,7 +165,7 @@ I18N = {
         "no_errors": "No mistakes",
     },
     "tr": {
-        "greet": "👋 Merhaba! Ben Deutsch-bot.\nArayüz dilini seç:",
+        "greet": "👋 Merhaba! Ben Deutsch-bot.\nLütfen arayüz dilini seç:",
         "help": (
             "Komutlar:\n"
             "• /teacher_on — her zaman düzeltir ve açıklarım\n"
@@ -201,8 +199,8 @@ I18N = {
         "corrections": "Düzeltmeler:",
         "no_errors": "Hata yok",
     },
-    "fa": {  # Persian (Farsi) — RTL handled by Telegram
-        "greet": "👋 سلام! من بات آلمانی تو هستم.\nلطفاً زبان رابط را انتخاب کن:",
+    "fa": {
+        "greet": "👋 سلام! من ربات آلمانی تو هستم.\nلطفاً زبان رابط را انتخاب کن:",
         "help": (
             "دستورات:\n"
             "• /teacher_on — همیشه تصحیح و توضیح می‌دهم\n"
@@ -236,8 +234,8 @@ I18N = {
         "corrections": "اصلاحات:",
         "no_errors": "بدون خطا",
     },
-    "ar": {  # Arabic — RTL
-        "greet": "👋 أهلاً! أنا بوت الألمانية.\nاختر لغة الواجهة:",
+    "ar": {
+        "greet": "👋 أهلاً! أنا بوت الألمانية.\nيرجى اختيار لغة الواجهة:",
         "help": (
             "الأوامر:\n"
             "• /teacher_on — أصحح وأشرح دائماً\n"
@@ -352,7 +350,6 @@ def send_tts(chat_id: int, text: str, base: str = "reply"):
         return
     except Exception:
         traceback.print_exc()
-
     try:
         mp3_path = f"{base}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.mp3"
         with client.audio.speech.with_streaming_response.create(
@@ -391,7 +388,6 @@ def detect_translation_request(user_text: str) -> bool:
 
 # === Генерация ответа ===
 def generate_reply(user_text: str, mode: str, lang: str):
-    # язык для объяснений
     expl_map = {
         "ru": "на русском",
         "uk": "українською",
@@ -426,7 +422,7 @@ def generate_reply(user_text: str, mode: str, lang: str):
             f"Если в сообщении ученика есть ошибки — добавь отдельный блок '{corrections_tag}' "
             f"с краткими пояснениями {expl_lang}. Если ошибок нет — просто ответь по-немецки."
         )
-    else:  # chat
+    else:
         system = "Ты собеседник на немецком. Отвечай естественно и коротко. Не исправляй и не объясняй."
 
     resp = client.chat.completions.create(
@@ -451,7 +447,7 @@ def generate_reply(user_text: str, mode: str, lang: str):
     return german_reply, explain
 
 # === Language menu ===
-def send_language_menu(chat_id: int, lang: str):
+def build_language_keyboard():
     kb = types.InlineKeyboardMarkup()
     row = []
     for code in LANGS:
@@ -462,6 +458,10 @@ def send_language_menu(chat_id: int, lang: str):
             row = []
     if row:
         kb.row(*row)
+    return kb
+
+def send_language_menu(chat_id: int, lang: str):
+    kb = build_language_keyboard()
     bot.send_message(chat_id, t(lang, "lang_choose"), reply_markup=kb)
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("lang_"))
@@ -470,7 +470,6 @@ def cb_set_lang(call):
     set_lang(call.from_user.id, code)
     bot.answer_callback_query(call.id)
     bot.send_message(call.message.chat.id, t(code, "lang_set").format(lang=LANG_TITLES[code]))
-    # После выбора — вывести help
     bot.send_message(call.message.chat.id, t(code, "help"))
 
 # === Команды утилиты/донат/язык/админ ===
@@ -495,13 +494,16 @@ def start(message):
     # зарегистрируем визит
     if message.from_user.id not in user_stats:
         user_stats[message.from_user.id] = {"total": 0, "text": 0, "voice": 0, "first": utcnow(), "last": utcnow()}
-    # если языка нет — показать меню выбора
+
+    # если языка нет — показываем ОДНО сообщение на английском + клавиатуру
+    if (message.text == "/start") and (message.from_user.id not in user_langs):
+        kb = build_language_keyboard()
+        bot.send_message(message.chat.id, t("en", "greet"), reply_markup=kb)
+        return
+
+    # иначе — обычная справка на выбранном языке
     lang = get_lang(message.from_user.id)
-    if message.text == "/start" and message.from_user.id not in user_langs:
-        bot.send_message(message.chat.id, t(lang, "greet"))
-        send_language_menu(message.chat.id, lang)
-    else:
-        bot.send_message(message.chat.id, t(lang, "help"))
+    bot.send_message(message.chat.id, t(lang, "help"))
 
 @bot.message_handler(commands=['teacher_on'])
 def teacher_on(message):
@@ -561,7 +563,7 @@ def handle_voice(message):
 
         inc_and_maybe_remind(message.chat.id, message.from_user.id)
 
-    except Exception as e:
+    except Exception:
         bot.send_message(message.chat.id, t(lang, "err_voice"))
         traceback.print_exc()
 
@@ -582,7 +584,7 @@ def handle_text(message):
 
         inc_and_maybe_remind(message.chat.id, message.from_user.id)
 
-    except Exception as e:
+    except Exception:
         bot.send_message(message.chat.id, t(lang, "err_text"))
         traceback.print_exc()
 
