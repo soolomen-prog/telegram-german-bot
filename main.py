@@ -49,7 +49,7 @@ LANG_TITLES = {
     "ar": "العربية",
 }
 user_langs = {}
-DEFAULT_LANG = "en"  # приветствие и первый экран на английском
+DEFAULT_LANG = "en"  # первый экран на английском
 
 def get_lang(user_id: int) -> str:
     return user_langs.get(user_id, DEFAULT_LANG)
@@ -59,47 +59,53 @@ def set_lang(user_id: int, lang: str):
         user_langs[user_id] = lang
 
 # === Персоны (личности) ===
+# Хранение выбранной персоны на пользователя
+user_personas = {}
+
 PERSONAS = [
     {
-        "name": "Jonas Keller",
-        "desc": (
-            "Du bist Jonas Keller, 22, Linguistikstudent in Leipzig. "
-            "Locker, freundlich, humorvoll, gelegentlich Jugendslang. "
-            "Arbeitet als Barista, mag Musik und Serien. "
-            "Antworte natürlich, leicht und mit einem Hauch Humor."
-        ),
-        "voice": "verse"
-    },
-    {
-        "name": "Thomas Berger",
-        "desc": (
-            "Du bist Thomas Berger, 45, Logistikmanager aus Hannover. "
-            "Ruhig, höflich, sachlich, liebt Ordnung und Klarheit. "
-            "Sprich neutral-höflich und strukturiert, ohne Slang."
-        ),
+        "id": "student",
+        "name": "Lukas",
+        "age": 22,
+        "city": "Berlin",
+        "bio": "Студент информатики. Любит кофе, сериалы и настольный теннис. Ненавидит бумажную бюрократию.",
+        "style": "Лёгкий, дружелюбный, иногда шутит, задаёт простые вопросы про хобби и повседневность.",
         "voice": "alloy"
     },
     {
-        "name": "Helga Neumann",
-        "desc": (
-            "Du bist Helga Neumann, 68, Rentnerin aus Baden-Baden. "
-            "Warmherzig, sanft, mütterlich, mag Garten und Backen. "
-            "Sprich freundlich, ermutigend und gemächlich."
-        ),
-        "voice": "sage"
-    }
+        "id": "designer",
+        "name": "Thomas",
+        "age": 38,
+        "city": "Hamburg",
+        "bio": "Дизайнер в digital-агентстве. Любит путешествовать, фото и велосипеды. Не любит хаос в дедлайнах.",
+        "style": "Спокойный, прагматичный, интересуется работой/проектами и мнением собеседника.",
+        "voice": "alloy"
+    },
+    {
+        "id": "senior",
+        "name": "Elsa",
+        "age": 67,
+        "city": "München",
+        "bio": "На пенсии, любит сад, природу и пекарни рядом с домом. Не любит шум и спешку.",
+        "style": "Тёплый, заботливый тон, интересуется семейными темами и традициями, делится опытом.",
+        "voice": "alloy"
+    },
 ]
-user_personas = {}  # user_id -> persona dict
+
+def pick_persona() -> dict:
+    return random.choice(PERSONAS)
 
 def get_persona(user_id: int) -> dict:
-    if user_id not in user_personas:
-        user_personas[user_id] = random.choice(PERSONAS)
-    return user_personas[user_id]
+    persona = user_personas.get(user_id)
+    if not persona:
+        persona = pick_persona()
+        user_personas[user_id] = persona
+    return persona
 
 # Локализация строк
 I18N = {
     "ru": {
-        "greet": "👋 Hi! I’m your Deutsch-bot.\nPlease choose your interface language:",
+        "greet": "👋 Привет! Я твой Deutsch-бот.\nВыбери язык интерфейса:",
         "help": (
             "Команды:\n"
             "• /teacher_on — всегда исправляю и объясняю\n"
@@ -134,7 +140,7 @@ I18N = {
         "no_errors": "Ошибок нет",
     },
     "uk": {
-        "greet": "👋 Hi! I’m your Deutsch-bot.\nPlease choose your interface language:",
+        "greet": "👋 Привіт! Я твій Deutsch-бот.\nОберіть мову інтерфейсу:",
         "help": (
             "Команди:\n"
             "• /teacher_on — завжди виправляю та пояснюю\n"
@@ -204,7 +210,7 @@ I18N = {
         "no_errors": "No mistakes",
     },
     "tr": {
-        "greet": "👋 Hi! I’m your Deutsch-bot.\nPlease choose your interface language:",
+        "greet": "👋 Merhaba! Ben Deutsch-bot.\nLütfen arayüz dilini seç:",
         "help": (
             "Komutlar:\n"
             "• /teacher_on — her zaman düzeltir ve açıklarım\n"
@@ -239,7 +245,7 @@ I18N = {
         "no_errors": "Hata yok",
     },
     "fa": {
-        "greet": "👋 Hi! I’m your Deutsch-bot.\nPlease choose your interface language:",
+        "greet": "👋 سلام! من ربات آلمانی تو هستم.\nلطفاً زبان رابط را انتخاب کن:",
         "help": (
             "دستورات:\n"
             "• /teacher_on — همیشه تصحیح و توضیح می‌دهم\n"
@@ -274,7 +280,7 @@ I18N = {
         "no_errors": "بدون خطا",
     },
     "ar": {
-        "greet": "👋 Hi! I’m your Deutsch-bot.\nPlease choose your interface language:",
+        "greet": "👋 أهلاً! أنا بوت الألمانية.\nيرجى اختيار لغة الواجهة:",
         "help": (
             "الأوامر:\n"
             "• /teacher_on — أصحح وأشرح دائماً\n"
@@ -311,7 +317,7 @@ I18N = {
 }
 
 def t(lang: str, key: str) -> str:
-    return I18N.get(lang, I18N[DEFAULT_LANG]).get(key, key)
+    return I18N.get(lang, I18N["en"]).get(key, key)
 
 # === Простая аналитика ===
 def utcnow():
@@ -374,10 +380,7 @@ def inc_and_maybe_remind(chat_id: int, user_id: int):
         send_donate_message(chat_id, get_lang(user_id), short=True)
 
 # === TTS (OGG + fallback MP3) ===
-def send_tts(chat_id: int, user_id: int, text: str, base: str = "reply"):
-    # выбираем голос по персоне
-    persona = get_persona(user_id)
-    voice = persona.get("voice", "alloy")
+def send_tts(chat_id: int, text: str, base: str = "reply", voice: str = "alloy"):
     try:
         ogg_path = f"{base}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.ogg"
         with client.audio.speech.with_streaming_response.create(
@@ -424,15 +427,46 @@ def detect_translation_request(user_text: str) -> bool:
             temperature=0
         )
         answer = resp.choices[0].message.content.strip().lower()
-        return "да" in answer or "yes" in answer
+        return ("да" in answer) or ("yes" in answer)
     except Exception:
         return False
 
-# === Генерация ответа ===
-def generate_reply(user_text: str, mode: str, lang: str, user_id: int):
-    persona = get_persona(user_id)
-    persona_preamble = persona["desc"]
+# === Генерация ответа с учётом персоны и инициативы ===
+INITIATIVE_CHANCE = 0.35  # вероятность задать уместный встречный вопрос
 
+def persona_header(p: dict) -> str:
+    # Короткое резюме для системного промпта
+    return (
+        f"Ты — {p['name']}, {p['age']} лет, живёшь в {p['city']}. "
+        f"Характер: {p['style']} Биография: {p['bio']} "
+        "Говоришь только по-немецки в основной реплике. "
+        "Избегай слишком личных/чувствительных вопросов. "
+    )
+
+def generate_followup(user_text: str, persona: dict) -> str:
+    # Генерируем короткий уместный вопрос по-немецки, связанный с контекстом
+    try:
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content":
+                    "Du stellst NUR EINE sehr kurze, natürliche Rückfrage auf Deutsch, passend zum letzten Nutzerbeitrag. "
+                    "Kein Smalltalk ohne Bezug. Nicht zu persönlich. 1 Satz."
+                },
+                {"role": "user", "content": user_text}
+            ],
+            temperature=0.7
+        )
+        q = resp.choices[0].message.content.strip()
+        # Мини-фильтр — чтобы не дублировал
+        if len(q) > 0 and "?" in q and len(q) <= 120:
+            return q
+    except Exception:
+        pass
+    return ""
+
+def generate_reply(user_text: str, mode: str, lang: str, persona: dict):
+    # язык для объяснений
     expl_map = {
         "ru": "на русском",
         "uk": "українською",
@@ -445,33 +479,42 @@ def generate_reply(user_text: str, mode: str, lang: str, user_id: int):
     corrections_tag = t(lang, "corrections")
     no_errors = t(lang, "no_errors")
 
+    # базовый системный промпт с персоной
+    base_persona = persona_header(persona)
+
     if detect_translation_request(user_text):
-        core = (
-            "Пользователь ищет перевод или не знает, как сказать что-то по-немецки. "
-            f"Дай перевод, краткое пояснение грамматики {expl_lang} и приведи 2–3 примера на немецком."
+        system = (
+            base_persona +
+            "Der Nutzer sucht eine Übersetzung oder weiß nicht, wie man etwas auf Deutsch sagt. "
+            f"Gib die passende Formulierung, ein kurzes Grammatikkommentar {expl_lang} und 2–3 Beispiele auf Deutsch."
         )
     elif mode == "teacher":
-        core = (
-            "Ты учитель немецкого. Сначала ответь по-немецки (1–2 предложения), "
-            f"затем отдельным блоком '{corrections_tag}' дай краткие исправления {expl_lang}. "
-            f"Если ошибок нет — напиши '{no_errors}'."
+        system = (
+            base_persona +
+            "Du bist Deutschlehrer. Antworte zuerst auf Deutsch (1–2 Sätze), "
+            f"dann gib einen separaten Block '{corrections_tag}' mit kurzen Korrekturen {expl_lang}. "
+            f"Wenn es keine Fehler gibt, schreibe '{no_errors}'."
         )
     elif mode == "mix":
-        core = (
-            "Ты собеседник на немецком. Отвечай коротко и естественно. "
-            "Исправляй ошибки только если пользователь явно просит (например: 'исправь', 'korrigiere')."
+        system = (
+            base_persona +
+            "Du bist Gesprächspartner auf Deutsch. Antworte kurz und natürlich. "
+            "Korrigiere Fehler nur, wenn der Nutzer es ausdrücklich verlangt (z. B. 'korrigiere', 'исправь')."
         )
     elif mode == "auto":
-        core = (
-            "Ты собеседник на немецком. Отвечай естественно и коротко (1–2 предложения). "
-            f"Если в сообщении ученика есть ошибки — добавь отдельный блок '{corrections_tag}' "
-            f"с краткими пояснениями {expl_lang}. Если ошибок нет — просто ответь по-немецки."
+        system = (
+            base_persona +
+            "Du bist Gesprächspartner auf Deutsch. Antworte kurz und natürlich (1–2 Sätze). "
+            f"Wenn es Fehler im Nutzersatz gibt, füge einen separaten Block '{corrections_tag}' "
+            f"mit kurzen Erklärungen {expl_lang} hinzu. Wenn keine Fehler da sind, antworte nur auf Deutsch."
         )
     else:
-        core = "Ты собеседник на немецком. Отвечай естественно и коротко. Не исправляй и не объясняй."
+        system = (
+            base_persona +
+            "Du bist Gesprächspartner auf Deutsch. Antworte kurz und natürlich. Keine Korrekturen, keine Erklärungen."
+        )
 
-    system = f"{persona_preamble}\n{core}"
-
+    # Основной ответ
     resp = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
@@ -485,11 +528,22 @@ def generate_reply(user_text: str, mode: str, lang: str, user_id: int):
     german_reply = full
     explain = ""
 
+    # Выделение блока исправлений
     if corrections_tag in full:
         parts = full.split(corrections_tag, 1)
         german_reply = parts[0].strip()
         tail = parts[1].strip()
         explain = f"{corrections_tag} {tail}" if tail else f"{corrections_tag} {no_errors}"
+
+    # С вероятностью — добавить уместный короткий follow-up вопрос
+    if random.random() < INITIATIVE_CHANCE:
+        follow = generate_followup(user_text, persona)
+        if follow:
+            # Если есть блок исправлений — зададим вопрос ПОСЛЕ немецкой части, но ДО исправлений
+            if explain:
+                german_reply = (german_reply + ("\n\n" if german_reply else "") + follow).strip()
+            else:
+                german_reply = (german_reply + ("\n\n" if german_reply else "") + follow).strip()
 
     return german_reply, explain
 
@@ -515,6 +569,9 @@ def send_language_menu(chat_id: int, lang: str):
 def cb_set_lang(call):
     code = call.data.split("_", 1)[1]
     set_lang(call.from_user.id, code)
+    # фиксируем персону при первом взаимодействии (если ещё не зафиксирована)
+    _ = get_persona(call.from_user.id)
+
     bot.answer_callback_query(call.id)
     bot.send_message(call.message.chat.id, t(code, "lang_set").format(lang=LANG_TITLES[code]))
     bot.send_message(call.message.chat.id, t(code, "help"))
@@ -541,16 +598,16 @@ def start(message):
     # зарегистрируем визит
     if message.from_user.id not in user_stats:
         user_stats[message.from_user.id] = {"total": 0, "text": 0, "voice": 0, "first": utcnow(), "last": utcnow()}
-    # назначим персону при первом контакте
+
+    # назначим персону, если ещё нет
     _ = get_persona(message.from_user.id)
 
-    # если языка нет — показываем ОДНО сообщение на английском + клавиатуру
+    # стартовый экран
     if (message.text == "/start") and (message.from_user.id not in user_langs):
         kb = build_language_keyboard()
         bot.send_message(message.chat.id, t("en", "greet"), reply_markup=kb)
         return
 
-    # иначе — обычная справка на выбранном языке
     lang = get_lang(message.from_user.id)
     bot.send_message(message.chat.id, t(lang, "help"))
 
@@ -585,6 +642,7 @@ def status(message):
 @bot.message_handler(content_types=['voice'])
 def handle_voice(message):
     lang = get_lang(message.from_user.id)
+    persona = get_persona(message.from_user.id)
     try:
         bump_stats(message.from_user.id, "voice")
         mode = get_mode(message.from_user.id)
@@ -602,10 +660,10 @@ def handle_voice(message):
             )
         user_text = getattr(transcript, "text", str(transcript)).strip()
 
-        de_answer, explain = generate_reply(user_text, mode, lang, message.from_user.id)
+        de_answer, explain = generate_reply(user_text, mode, lang, persona)
 
         bot.send_message(message.chat.id, de_answer)
-        send_tts(message.chat.id, message.from_user.id, de_answer, base="voice_reply")
+        send_tts(message.chat.id, de_answer, base="voice_reply", voice=persona.get("voice", "alloy"))
 
         if explain:
             bot.send_message(message.chat.id, f"✍️ {explain}")
@@ -620,13 +678,14 @@ def handle_voice(message):
 @bot.message_handler(func=lambda m: True, content_types=['text'])
 def handle_text(message):
     lang = get_lang(message.from_user.id)
+    persona = get_persona(message.from_user.id)
     try:
         bump_stats(message.from_user.id, "text")
         mode = get_mode(message.from_user.id)
-        de_answer, explain = generate_reply(message.text, mode, lang, message.from_user.id)
+        de_answer, explain = generate_reply(message.text, mode, lang, persona)
 
         bot.send_message(message.chat.id, de_answer)
-        send_tts(message.chat.id, message.from_user.id, de_answer, base="text_reply")
+        send_tts(message.chat.id, de_answer, base="text_reply", voice=persona.get("voice", "alloy"))
 
         if explain:
             bot.send_message(message.chat.id, f"✍️ {explain}")
